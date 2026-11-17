@@ -76,6 +76,22 @@ def check(ok: bool, what: str) -> None:
         problems.append(what)
 
 
+def security_headers(headers: dict[str, str], where: str) -> None:
+    """The headers STANDARD.md §3 asks of every answer of the page."""
+    policy = {part.split()[0]: part.split()[1:]
+              for part in headers.get("content-security-policy", "").split(";") if part.strip()}
+    scripts = policy.get("script-src", [])
+    check(policy.get("default-src") == ["'none'"]
+          and "'unsafe-inline'" not in scripts and any(s.startswith(("'sha256-", "'nonce-")) for s in scripts)
+          and policy.get("frame-ancestors") == ["'self'"] and policy.get("base-uri") == ["'none'"]
+          and policy.get("form-action") in (["'none'"], ["'self'"])
+          and headers.get("x-content-type-options") == "nosniff"
+          and headers.get("referrer-policy") in ("no-referrer", "same-origin")
+          and headers.get("cache-control") == "no-store",
+          f"{where}: security headers (CSP {headers.get('content-security-policy')!r}, "
+          f"{headers.get('x-content-type-options')}, {headers.get('referrer-policy')}, {headers.get('cache-control')})")
+
+
 def docker(*args: str, check_: bool = True) -> str:
     return subprocess.run(["docker", *args], check=check_, capture_output=True, text=True).stdout.strip()
 
@@ -210,8 +226,10 @@ def run(image: str, shots: bool) -> None:
             p.errors = []
             p.on("console", lambda m: m.type == "error" and p.errors.append(f"console: {m.text} ({m.location.get('url')})"))
             p.on("pageerror", lambda e: p.errors.append(f"script: {e}"))
-            p.goto(url)
+            answer = p.goto(url)
             p.wait_for_load_state("networkidle")
+            if answer is not None and "/api/hassio_ingress/" in url:
+                security_headers(answer.headers, url)
             return p
 
         def done(p: Page, what: str) -> None:

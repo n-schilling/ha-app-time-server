@@ -3,6 +3,8 @@
 chronyc is the stub answering from tests/fixtures.
 """
 
+import base64
+import hashlib
 import json
 import os
 import re
@@ -1016,6 +1018,27 @@ class Server(Fixture):
         self.assertEqual(self.post(base, b"x" * (w.BODY_MAX + 1)), 400)
         self.assertEqual(self.post(base, json.dumps({"action": "forget", "ip": "192.0.2.99"}).encode()), 404)
         self.assertEqual(self.post(base, json.dumps({"action": "forget", "ip": "192.0.2.6"}).encode()), 204)
+
+    def test_security_headers(self) -> None:
+        # STANDARD.md §3: the page's one script by its hash, nothing from elsewhere, framed by Home Assistant only
+        base = self.serve(set())
+        page = self.get(base + "/")[1]
+        script = page.split("<script>", 1)[1].split("</script>", 1)[0]
+        digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+        for path in ("/", "/?tab=clients", "/now", "/other"):
+            request = urllib.request.Request(base + path)
+            try:
+                answer = urllib.request.urlopen(request)
+            except urllib.error.HTTPError as err:
+                answer = err
+            with answer:
+                policy = answer.headers["Content-Security-Policy"]
+                self.assertIn(f"script-src 'sha256-{digest}'", policy, path)
+                self.assertNotIn("unsafe-inline';", policy.split("script-src", 1)[1].split(";", 1)[0], path)
+                for part in ("default-src 'none'", "frame-ancestors 'self'", "base-uri 'none'", "form-action 'none'"):
+                    self.assertIn(part, policy, path)
+                self.assertEqual(answer.headers["X-Content-Type-Options"], "nosniff", path)
+                self.assertEqual(answer.headers["Referrer-Policy"], "same-origin", path)
 
     def test_changes_only_through_the_ingress_proxy(self) -> None:
         base = self.serve({w.INGRESS_PEER}) + "/"

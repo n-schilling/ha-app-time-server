@@ -2,6 +2,12 @@
 
 All notable changes to this app are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the app uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3] - 2026-11-17
+
+### Security
+
+- Every answer of the page carries a Content Security Policy (only the page's own script, by its hash; nothing loaded from elsewhere; only Home Assistant may frame it), `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`, as the apps' standard now asks
+
 ## [3.1.2] - 2026-11-17
 
 ### Changed

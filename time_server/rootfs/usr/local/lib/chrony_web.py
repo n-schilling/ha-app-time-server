@@ -35,8 +35,10 @@ the refresh button is pressed.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import functools
+import hashlib
 import html
 import ipaddress
 import json
@@ -483,6 +485,18 @@ def shared_script() -> str:
 
 
 SCRIPT = shared_script() + SCRIPT
+
+# Every answer of the page (STANDARD.md §3): only the page's own script, by its
+# hash, runs, so a text that ever slipped through unescaped could not run one;
+# nothing is loaded from elsewhere and only Home Assistant may frame the page
+SCRIPT_HASH = "sha256-" + base64.b64encode(hashlib.sha256(SCRIPT.encode()).digest()).decode()
+SECURITY_HEADERS = {
+    "Content-Security-Policy": f"default-src 'none'; script-src '{SCRIPT_HASH}'; style-src 'unsafe-inline'; "
+                               "img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+                               "frame-ancestors 'self'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
 
 
 # --- chronyc ----------------------------------------------------------------------
@@ -1514,6 +1528,8 @@ def handler(state: State, slug: str | None, allowed: set[str], version: str | No
             self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", cache)
+            for name, value in SECURITY_HEADERS.items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
 
