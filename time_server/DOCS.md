@@ -18,7 +18,17 @@ python3 scripts/query_time_server.py <home-assistant-host> --http-port 80
 
 It asks a few times over NTP and over HTTP, and shows the server's time, how far your computer's clock is off and the round trip.
 
-The app asks for the `SYS_TIME` capability, so chrony may set the host clock when `set_system_clock` is on, and for port 123/udp on the host. Only the setup at the start runs as root: chronyd and the web page run as chrony's own user, the HTTP time service as a user of its own without access to chronyd's command socket, the sensor publisher as a user of its own that alone can read the broker's password. An AppArmor profile allows only the capabilities, networks, programs and paths the app uses.
+### What the app may do
+
+Every right the app asks for in `config.yaml`, and why:
+
+- `privileged: SYS_TIME`: chrony may set the host clock, only when `set_system_clock` is on.
+- `ports: 123/udp`: NTP for the devices in your network; `8080/tcp` (time over HTTP) stays closed until you set a host port.
+- `services: mqtt:need`: the broker's address and login from the Supervisor, for the sensors.
+- `ingress: true`: the web page, inside Home Assistant only, for administrators.
+- `startup: system`: it starts early, so the house has its time before other apps need it.
+
+It asks for nothing else: no host network, no Home Assistant or Supervisor API role, no access to `/config`, `/share`, `/media` or `/ssl`, no devices. Only the setup at the start runs as root: chronyd and the web page run as chrony's own user, the HTTP time service as a user of its own without access to chronyd's command socket, the sensor publisher as a user of its own that alone can read the broker's password. The AppArmor profile (`apparmor.txt`) allows only the capabilities the app uses (`chown`, `dac_override`, `fowner`, `kill`, `setuid`, `setgid` for the setup and for starting the services as their users, `net_bind_service` for port 123, `sys_time`), the networks (UDP, TCP and Unix sockets), the programs of the image and the paths the app uses (its own `/data`, `/run`, `/tmp` and chrony's configuration file); writing to `/proc/sys` and `/sys` is denied.
 
 ## Options
 

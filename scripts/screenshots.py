@@ -8,16 +8,19 @@ the page on under /api/hassio_ingress/<token>/ and holds it in a frame. A
 headless browser then opens the page as Home Assistant's ingress would and
 checks, in light, dark and at phone width, in English and German:
 
-- every view (Overview, Upstream, Clients) by its URL, with the tabs after the
-  name in its row (on a phone a bar with icons at the bottom) and the right one
-  active; tab, reload and back in Home Assistant's frame;
-- the header (STANDARD.md, section 7): the icon, the name, then the stamp "As of
-  HH:MM:SS", the refresh button and the settings button, which leads to
+- every view (Overview, Upstream, Clients) by its URL ?tab=<view> (no tab: the
+  overview), with the tabs after the name in its row and no bottom bar (on a
+  phone a bar with icons at the bottom) and the right one active; tab, reload
+  and back in Home Assistant's frame;
+- the header (STANDARD.md, section 7): the icon left of the name, the name
+  exactly as `name` in config.yaml, then the stamp "As of HH:MM:SS", the
+  refresh button and the settings button, which leads to
   /config/app/a1b2c3d4_time_server/config outside the frame (target _top);
+  icon, name and buttons inside the header, also on a phone;
 - the version line "Time Server <version>" as the last element of body;
 - no console errors, no failed scripts and no Content Security Policy violations;
-- refresh, the client list's filter and the edit dialog work, and nothing is
-  wider than a phone;
+- refresh (in place, and the stamp moves), the client list's filter and the
+  edit dialog work, and nothing is wider than a phone;
 - the page takes Home Assistant's language over the browser's (a stand-in for
   its frontend in German, English and French around the frame): reloading once
   when it changes, never again, with the cookie for the ingress path only.
@@ -47,16 +50,18 @@ from playwright.sync_api import Error, Frame, Page, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs/screenshots"
-VERSION = re.search(r'^version: "?([^"\n]+)"?$', (ROOT / "time_server/config.yaml").read_text(), re.M)[1]
-NAME = "Time Server"
+CONFIG = (ROOT / "time_server/config.yaml").read_text()
+VERSION = re.search(r'^version: "?([^"\n]+)"?$', CONFIG, re.M)[1]
+# The name the app store shows; the header must carry exactly this
+NAME = re.search(r'^name: "?([^"\n]+?)"?$', CONFIG, re.M)[1]
 HOST = "a1b2c3d4-time-server"
 SLUG = "a1b2c3d4_time_server"
 INGRESS = "/api/hassio_ingress/demo-token/"
 NET, APP, PROXY = "chrony-page-check", "chrony-page-check-app", "chrony-page-check-ingress"
-TEXTS = {"en-US": ("Time Server", "As of", "Refresh", "Settings"),
-         "de-DE": ("Time Server", "Stand", "Aktualisieren", "Einstellungen")}
+TEXTS = {"en-US": (NAME, "As of", "Refresh", "Settings"),
+         "de-DE": (NAME, "Stand", "Aktualisieren", "Einstellungen")}
 # The views (tabs in the header), where each one is, and their labels
-TABS = (("overview", "?"), ("upstream", "?tab=upstream"), ("clients", "?tab=clients"))
+TABS = (("overview", "?tab=overview"), ("upstream", "?tab=upstream"), ("clients", "?tab=clients"))
 TAB_LABELS = {"en-US": ["Overview", "Upstream", "Clients"], "de-DE": ["Übersicht", "Upstream", "Clients"]}
 # Collects Content Security Policy violations, which reach no console
 WATCH_CSP = """window.__csp = [];
@@ -124,20 +129,30 @@ def header(p: Page | Frame, lang: str, phone: bool, tab: str = "overview") -> No
         tags: [...h.children].slice(0, 3).map((k) => k.tagName.toLowerCase() + (k.className ? "." + k.className.split(" ").join(".") : "")),
         h1: h.querySelector(":scope > h1")?.textContent,
         // The store icon left of the name: loaded, 24 px, in the row of the name
-        icon: h.firstElementChild.matches("img.app-icon") ? (() => {
+        icon: h.firstElementChild.matches("img.brand") ? (() => {
           const box = h.firstElementChild.getBoundingClientRect(), name = h.querySelector(":scope > h1").getBoundingClientRect();
           return {src: h.firstElementChild.getAttribute("src"), loaded: h.firstElementChild.complete && h.firstElementChild.naturalWidth > 0,
-                  size: [box.width, box.height], row: Math.abs((box.top + box.bottom) / 2 - (name.top + name.bottom) / 2) < 2};
+                  size: [box.width, box.height], row: Math.abs((box.top + box.bottom) / 2 - (name.top + name.bottom) / 2) < 2,
+                  left: box.right <= name.left};
         })() : null,
+        // Icon, name and the buttons inside the header's box (on a phone the name gives way with an ellipsis)
+        inside: (() => {
+          const box = h.getBoundingClientRect();
+          return [h.querySelector(":scope > img"), h.querySelector(":scope > h1"), ...h.querySelectorAll(":scope > .actions > a")]
+            .filter(Boolean).every((e) => { const r = e.getBoundingClientRect();
+              return r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5; });
+        })(),
         // The views: tabs right after the name, in its row (on a phone a bar at the bottom of the window)
         tabs: (() => {
           const nav = h.querySelector(":scope > nav.tabs");
           if (!nav) return null;
           const name = h.querySelector(":scope > h1").getBoundingClientRect(), box = nav.getBoundingClientRect();
           const mid = (r) => (r.top + r.bottom) / 2;
-          return {labels: [...nav.children].map((a) => a.textContent), hrefs: [...nav.children].map((a) => a.getAttribute("href")),
-                  active: [...nav.querySelectorAll("a.active[aria-current=page]")].map((a) => a.getAttribute("href")),
+          return {labels: [...nav.querySelectorAll(":scope > a.tab")].map((a) => a.textContent),
+                  hrefs: [...nav.children].map((a) => a.getAttribute("href")),
+                  active: [...nav.querySelectorAll("a.tab.active[aria-current=page]")].map((a) => a.getAttribute("href")),
                   row: Math.abs(mid(box) - mid(name)) < 2, bottom: Math.abs(box.bottom - window.innerHeight) < 1,
+                  fixed: getComputedStyle(nav).position === "fixed",
                   icons: [...nav.children].every((a) => a.querySelector("svg") && getComputedStyle(a.querySelector("svg")).display !== "none")};
         })(),
         kids: a ? [...a.children].map((e) => ({ tag: e.tagName, id: e.id, cls: e.className, role: e.getAttribute("role"),
@@ -150,7 +165,7 @@ def header(p: Page | Frame, lang: str, phone: bool, tab: str = "overview") -> No
     if shape is None:
         return
     kids = shape["kids"]
-    check(shape["tags"] == ["img.app-icon", "h1", "nav.tabs"] and shape["h1"] == title,
+    check(shape["tags"] == ["img.brand", "h1", "nav.tabs"] and shape["h1"] == title,
           f"{lang}: header starts with the icon, h1 {title!r}, then the tabs ({shape['tags']})")
     tabs = shape["tabs"] or {}
     check(tabs.get("labels") == TAB_LABELS[lang] and tabs.get("hrefs") == [href for _, href in TABS],
@@ -159,9 +174,11 @@ def header(p: Page | Frame, lang: str, phone: bool, tab: str = "overview") -> No
     if phone:
         check(tabs.get("bottom") and tabs.get("icons"), f"{lang}, {tab}: tabs with icons at the bottom ({tabs})")
     else:
-        check(tabs.get("row") and not tabs.get("icons"), f"{lang}, {tab}: tabs in the row of the name, no icons ({tabs})")
-    check(shape["icon"] == {"src": "icon.png", "loaded": True, "size": [24, 24], "row": True},
-          f"{lang}: the app's icon shows, 24 px, in the row of the name ({shape['icon']})")
+        check(tabs.get("row") and not tabs.get("icons") and not tabs.get("fixed") and not tabs.get("bottom"),
+              f"{lang}, {tab}: tabs in the row of the name, no icons, no bottom bar ({tabs})")
+    check(shape["icon"] == {"src": "icon.png", "loaded": True, "size": [24, 24], "row": True, "left": True},
+          f"{lang}: the app's icon shows, 24 px, in the row of the name, left of it ({shape['icon']})")
+    check(shape["inside"], f"{lang}, {tab}: icon, name and buttons inside the header")
     check(len(kids) == 3, f"{lang}: three actions in the header ({len(kids)})")
     if len(kids) == 3:
         stamp, again, gear = kids
@@ -218,20 +235,24 @@ def run(image: str, shots: bool) -> None:
             check(p.evaluate("document.documentElement.scrollWidth <= innerWidth"), f"{lang}: nothing wider than {width} px")
             if shots and (width, scheme) == (1200, "light"):
                 p.screenshot(path=OUT / "overview.png")
-            # Every view, by its URL; the clients last, for the list's checks
-            for tab, href in TABS[1:]:
+            # Every view, by its URL (the first also with an empty query); the clients last, for the list's checks
+            for tab, href in (("overview", "?"), *TABS):
                 p.goto(base + INGRESS + href)
                 header(p, lang, width < 600, tab)
                 check(p.evaluate("document.documentElement.scrollWidth <= innerWidth"),
                       f"{lang}, {tab}: nothing wider than {width} px")
                 if shots and (width, scheme) == (1200, "light") and tab == "upstream":
                     p.screenshot(path=OUT / "upstream.png")
-            # The page swaps in a fresh copy in place; with the request in flight the button spins
+            # The page swaps in a fresh copy in place; with the request in flight the button spins.
+            # The stamp shows seconds: a second later the fresh read moves it
+            before = p.locator("header .stamp").text_content()
+            p.wait_for_timeout(1100)
             with p.expect_response(lambda r: "refresh=1" in r.url):
                 p.locator("#refresh").click()
             p.wait_for_function("!document.querySelector('#refresh.busy')")
-            check(p.locator("header .stamp").count() == 1 and p.url == base + INGRESS + "?tab=clients",
-                  f"{lang}: refresh stays on the view")
+            after = p.locator("header .stamp").text_content() if p.locator("header .stamp").count() == 1 else None
+            check(after is not None and p.url == base + INGRESS + "?tab=clients", f"{lang}: refresh stays on the view")
+            check(after is not None and after != before, f"{lang}: refresh moves the stamp ({before} -> {after})")
             if shots and (width, scheme) == (1200, "light"):
                 p.locator(".chip[data-show=active]").click()
                 p.locator(".card", has=p.locator("#clients")).screenshot(path=OUT / "clients.png")
@@ -262,22 +283,24 @@ def run(image: str, shots: bool) -> None:
         app = next(f for f in p.frames if f.parent_frame is not None)
         for label, href in (("Clients", "?tab=clients"), ("Upstream", "?tab=upstream")):
             with p.expect_event("framenavigated", predicate=lambda f: f is app):
-                frame.locator("nav.tabs > a", has_text=label).click()
-            frame.locator("nav.tabs > a.active", has_text=label).wait_for()
+                frame.locator("nav.tabs > a.tab", has_text=label).click()
+            frame.locator("nav.tabs > a.tab.active", has_text=label).wait_for()
             check(app.url == base + INGRESS + href, f"frame: the {label} tab opens {href} ({app.url})")
         with p.expect_event("framenavigated", predicate=lambda f: f is app):
             app.evaluate("setTimeout(() => location.reload(), 0)")
-        frame.locator("nav.tabs > a.active", has_text="Upstream").wait_for()
+        frame.locator("nav.tabs > a.tab.active", has_text="Upstream").wait_for()
         check(app.url == base + INGRESS + "?tab=upstream", f"frame: reload stays on the view ({app.url})")
         with p.expect_event("framenavigated", predicate=lambda f: f is app):
             app.evaluate("setTimeout(() => history.back(), 0)")  # the browser's back, inside the frame
-        frame.locator("nav.tabs > a.active", has_text="Clients").wait_for()
+        frame.locator("nav.tabs > a.tab.active", has_text="Clients").wait_for()
         check(app.url == base + INGRESS + "?tab=clients", f"frame: back returns to the previous view ({app.url})")
         with p.expect_event("framenavigated", predicate=lambda f: f is app):
-            frame.locator("nav.tabs > a", has_text="Overview").click()
+            frame.locator("nav.tabs > a.tab", has_text="Overview").click()
+        frame.locator("nav.tabs > a.tab.active", has_text="Overview").wait_for()
+        check(app.url == base + INGRESS + "?tab=overview", f"frame: the Overview tab opens ?tab=overview ({app.url})")
         with p.expect_event("framenavigated", predicate=lambda f: f is app):
             frame.locator("a.state[href='?tab=clients']").click()
-        frame.locator("nav.tabs > a.active", has_text="Clients").wait_for()
+        frame.locator("nav.tabs > a.tab.active", has_text="Clients").wait_for()
         check(app.url == base + INGRESS + "?tab=clients", "frame: the overview's client line leads to the clients")
         done(p, "tabs")
 

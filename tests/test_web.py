@@ -15,6 +15,7 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import parse_qs
 
 TESTS = Path(__file__).resolve().parent
 sys.path[:0] = ["/usr/local/lib", str(TESTS.parent / "time_server/rootfs/usr/local/lib")]
@@ -388,10 +389,11 @@ class Views(Fixture):
         for tab in ("overview", "upstream", "clients"):
             page = w.render(state, "en", None, tab=tab)
             header = page[page.index("<header>"):page.index("</header>")]
-            self.assertRegex(header, r'^<header><img class="app-icon"[^>]*><h1>Time Server</h1><nav class="tabs">')
-            self.assertEqual(re.findall(r'<a class="[a-z]*" href="([^"]*)"', header), ["?", "?tab=upstream", "?tab=clients"])
-            self.assertEqual(re.findall(r'<a class="active" href="([^"]*)" aria-current="page">', header),
-                             ["?" if tab == "overview" else f"?tab={tab}"])
+            self.assertRegex(header, r'^<header><img class="brand"[^>]*><h1>Time Server</h1><nav class="tabs">')
+            self.assertEqual(re.findall(r'<a class="tab[a-z ]*" href="([^"]*)"', header),
+                             ["?tab=overview", "?tab=upstream", "?tab=clients"])
+            self.assertEqual(re.findall(r'<a class="tab active" href="([^"]*)" aria-current="page">', header),
+                             [f"?tab={tab}"])
         self.assertIn("<span>Übersicht</span>", w.render(state, "de", None))
 
     def test_each_detail_once(self) -> None:
@@ -851,7 +853,7 @@ class Page(Fixture):
         state = self.state()
         page = w.render(state, "de", "a1b2c3d4_time_server")
         stamp = time.strftime("%H:%M:%S", time.localtime(state.at))
-        self.assertRegex(page, '<header><img class="app-icon" src="icon.png" alt="" width="24" height="24"><h1>Time Server</h1>'
+        self.assertRegex(page, '<header><img class="brand" src="icon.png" alt="" width="24" height="24"><h1>Time Server</h1>'
                                '<nav class="tabs">.*</nav><div class="actions" id="actions">'
                                f'<span class="stamp opt">Stand {stamp}</span>'
                                '<a class="icon-button" href="" id="refresh" role="button" title="Aktualisieren"[^>]*>'
@@ -869,6 +871,18 @@ class Page(Fixture):
         self.assertIn("footer.version", page)
         self.assertIn("--primary-color: #009ac7", page)
         self.assertIn(".dot.on", page)
+        # ha.css unchanged in a first block, the page's own rules in a second
+        blocks = re.findall(r"<style>(.*?)</style>", page, re.S)
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[0], w.STYLESHEET.read_text())
+        self.assertIn(".dot.on", blocks[1])
+        self.assertNotIn("header", blocks[1])
+
+    def test_view_from_the_query(self) -> None:
+        """Every view is ?tab=<view>; without tab (or with an unknown one) the overview."""
+        for query, tab in (("", "overview"), ("tab=overview", "overview"), ("tab=upstream", "upstream"),
+                           ("tab=clients", "clients"), ("tab=nope", "overview"), ("refresh=1", "overview")):
+            self.assertEqual(w.tab_of(parse_qs(query)), tab, query)
 
     def test_log_level_from_the_option(self) -> None:
         import logging
@@ -1024,7 +1038,7 @@ class Server(Fixture):
             self.assertEqual(self.get(base + "/icon.png")[0], 404)
         finally:
             w.APP_ICON = saved
-        self.assertIn('<header><img class="app-icon" src="icon.png" alt="" width="24" height="24"><h1>',
+        self.assertIn('<header><img class="brand" src="icon.png" alt="" width="24" height="24"><h1>',
                       self.get(base + "/")[1])
 
     def test_page_has_the_dialog_outside_main(self) -> None:
