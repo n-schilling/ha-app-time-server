@@ -391,12 +391,32 @@ class Views(Fixture):
         for tab in ("overview", "upstream", "clients"):
             page = w.render(state, "en", None, tab=tab)
             header = page[page.index("<header>"):page.index("</header>")]
-            self.assertRegex(header, r'^<header><img class="brand"[^>]*><h1>Time Server</h1><nav class="tabs">')
+            # The menu button first, the name only for screen readers (ha.css hides it with tabs), no icon
+            self.assertRegex(header, r'^<header><a class="icon-button menu" href="" data-ha-menu role="button"'
+                                     r' title="Menu"[^>]*><svg[^>]*><path[^>]*/></svg></a>'
+                                     r'<h1 class="name">Time Server</h1><nav class="tabs">')
+            self.assertNotIn("<img", header)
             self.assertEqual(re.findall(r'<a class="tab[a-z ]*" href="([^"]*)"', header),
                              ["?tab=overview", "?tab=upstream", "?tab=clients"])
             self.assertEqual(re.findall(r'<a class="tab active" href="([^"]*)" aria-current="page">', header),
                              [f"?tab={tab}"])
         self.assertIn("<span>Übersicht</span>", w.render(state, "de", None))
+
+    def test_shared_frame_script_after_the_language(self) -> None:
+        """ha-frame.js right after ha-lang.js, before the page's own code, in the one hashed script."""
+        lang = w.SHARED_SCRIPT_FILE.read_text(encoding="utf-8")
+        frame = w.FRAME_SCRIPT_FILE.read_text(encoding="utf-8")
+        self.assertIn("home-assistant/subscribe-properties", frame)
+        self.assertIn("handleSafeArea: true", frame)
+        self.assertTrue(w.SCRIPT.startswith(lang + frame))
+        page = w.render(self.state(), "en", None)
+        self.assertEqual(page.count("</script>"), 1)  # one script element (the comments name <script>)
+        self.assertIn(f"<script>{w.SCRIPT}</script>", page)
+        self.assertIn("viewport-fit=cover", page)
+
+    def test_menu_button_in_both_languages(self) -> None:
+        self.assertIn('data-ha-menu role="button" title="Menü" aria-label="Menü"', w.render(self.state(), "de", None))
+        self.assertIn('data-ha-menu role="button" title="Menu" aria-label="Menu"', w.render(self.state(), "en", None))
 
     def test_each_detail_once(self) -> None:
         state = self.state()
@@ -833,7 +853,7 @@ class Page(Fixture):
         state = self.state(table={"192.0.2.6": '<img src=x onerror="alert(1)">'})
         page = w.render(state, "en", None, tab="clients")
         self.assertNotIn("<img src=x", page)
-        self.assertEqual(page.count("<img"), 1)  # the app's icon in the header
+        self.assertEqual(page.count("<img"), 0)  # no image at all: with tabs the header has no icon
         self.assertIn("&lt;img", page)
 
     def test_never_synchronized(self) -> None:
@@ -851,11 +871,12 @@ class Page(Fixture):
         self.assertIn('<footer class="version">Time Server</footer>', w.render(self.state(), "en", None))
 
     def test_same_header_as_every_app(self) -> None:
-        """h1, then stamp, refresh and settings, in this order (STANDARD.md, section 7)."""
+        """Menu, h1, tabs, then stamp, refresh and settings, in this order (STANDARD.md, section 7)."""
         state = self.state()
         page = w.render(state, "de", "a1b2c3d4_time_server")
         stamp = time.strftime("%H:%M:%S", time.localtime(state.at))
-        self.assertRegex(page, '<header><img class="brand" src="icon.png" alt="" width="24" height="24"><h1>Time Server</h1>'
+        self.assertRegex(page, '<header><a class="icon-button menu" href="" data-ha-menu role="button" title="Menü"[^>]*>'
+                               '<svg[^>]*><path[^>]*/></svg></a><h1 class="name">Time Server</h1>'
                                '<nav class="tabs">.*</nav><div class="actions" id="actions">'
                                f'<span class="stamp opt">Stand {stamp}</span>'
                                '<a class="icon-button" href="" id="refresh" role="button" title="Aktualisieren"[^>]*>'
@@ -1061,8 +1082,7 @@ class Server(Fixture):
             self.assertEqual(self.get(base + "/icon.png")[0], 404)
         finally:
             w.APP_ICON = saved
-        self.assertIn('<header><img class="brand" src="icon.png" alt="" width="24" height="24"><h1>',
-                      self.get(base + "/")[1])
+        self.assertIn('<h1 class="name">Time Server</h1>', self.get(base + "/")[1])
 
     def test_page_has_the_dialog_outside_main(self) -> None:
         base = self.serve(set())

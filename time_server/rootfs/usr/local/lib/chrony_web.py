@@ -108,10 +108,13 @@ STYLESHEET = Path(__file__).resolve().parents[1] / "share/ha-app/ha.css"
 # Home Assistant's language for the page (cookie ha_lang), shared like the
 # stylesheet; it runs first, in the page's one script
 SHARED_SCRIPT_FILE = STYLESHEET.with_name("ha-lang.js")
+# Home Assistant's frame (narrow, the phone's insets, its own bar off on a
+# phone, the menu button), shared the same way; it runs right after ha-lang.js
+FRAME_SCRIPT_FILE = STYLESHEET.with_name("ha-frame.js")
 
 TEXT = {
     "en": {
-        "title": APP_NAME, "settings": "Settings", "refresh": "Refresh", "as_of": "As of {}", "status": "Status", "accuracy": "Accuracy", "synced": "Synchronized with {}",
+        "title": APP_NAME, "menu": "Menu", "settings": "Settings", "refresh": "Refresh", "as_of": "As of {}", "status": "Status", "accuracy": "Accuracy", "synced": "Synchronized with {}",
         "unsynced": "Not synchronized", "local": "Serving its own clock, no upstream source",
         "leap": "Leap status: {}", "reference": "Reference source", "stratum": "Stratum",
         "offset": "System offset", "rms": "RMS offset", "frequency": "Frequency", "skew": "Skew",
@@ -145,7 +148,7 @@ TEXT = {
         "blocked_note": "Blocked: gets no time",
     },
     "de": {
-        "title": APP_NAME, "settings": "Einstellungen", "refresh": "Aktualisieren", "as_of": "Stand {}", "status": "Status", "accuracy": "Genauigkeit", "synced": "Synchron mit {}",
+        "title": APP_NAME, "menu": "Menü", "settings": "Einstellungen", "refresh": "Aktualisieren", "as_of": "Stand {}", "status": "Status", "accuracy": "Genauigkeit", "synced": "Synchron mit {}",
         "unsynced": "Nicht synchronisiert", "local": "Verteilt die eigene Uhr, keine Upstream-Quelle",
         "leap": "Schaltsekunden-Status: {}", "reference": "Referenzquelle", "stratum": "Stratum",
         "offset": "Systemabweichung", "rms": "RMS-Abweichung", "frequency": "Frequenz", "skew": "Streuung",
@@ -181,6 +184,7 @@ TEXT = {
 
 # Material Design Icons (Apache 2.0), as Home Assistant draws them
 ICONS = {
+    "menu": "M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z",
     "overview": "M19,5V7H15V5H19M9,5V11H5V5H9M19,13V19H15V13H19M9,17V19H5V17H9M21,3H13V9H21V3M11,3H3V13H11V3M21,11H13V21H21V11M11,15H3V21H11V15Z",
     "upstream": "M13,19H14A1,1 0 0,1 15,20H22V22H15A1,1 0 0,1 14,23H10A1,1 0 0,1 9,22H2V20H9A1,1 0 0,1 10,19H11V17H4A1,1 0 0,1 3,16V12A1,1 0 0,1 4,11H20A1,1 0 0,1 21,12V16A1,1 0 0,1 20,17H13V19M4,3H20A1,1 0 0,1 21,4V8A1,1 0 0,1 20,9H4A1,1 0 0,1 3,8V4A1,1 0 0,1 4,3M9,7H10V5H9V7M9,15H10V13H9V15M5,5V7H7V5H5M5,13V15H7V13H5Z",
     "clients": "M3 6H21V4H3C1.9 4 1 4.9 1 6V18C1 19.1 1.9 20 3 20H7V18H3V6M13 12H9V13.78C8.39 14.33 8 15.11 8 16C8 16.89 8.39 17.67 9 18.22V20H13V18.22C13.61 17.67 14 16.88 14 16S13.61 14.33 13 13.78V12M11 17.5C10.17 17.5 9.5 16.83 9.5 16S10.17 14.5 11 14.5 12.5 15.17 12.5 16 11.83 17.5 11 17.5M22 8H16C15.5 8 15 8.5 15 9V19C15 19.5 15.5 20 16 20H22C22.5 20 23 19.5 23 19V9C23 8.5 22.5 8 22 8M21 18H17V10H21V18Z",
@@ -210,8 +214,9 @@ def stylesheet() -> str:
     return f"<style>{shared}</style><style>{APP_STYLE}</style>"
 
 
-# The app's store icon at the left of the header, copied into the image next
-# to the stylesheet; the page links it as icon.png, relative to the ingress path
+# The app's store icon, copied into the image next to the stylesheet and
+# served as icon.png. With its views as tabs the header shows no icon (as
+# Home Assistant's own pages); a page of a single view would show it there
 APP_ICON_FILE = STYLESHEET.with_name("icon.png")
 
 
@@ -224,7 +229,6 @@ def app_icon() -> bytes | None:
 
 
 APP_ICON = app_icon()
-APP_ICON_TAG = '<img class="brand" src="icon.png" alt="" width="24" height="24">'
 
 APP_STYLE = """
 a.state { margin: 0 -8px 8px; padding: 4px 8px; border-radius: 8px; }
@@ -476,12 +480,14 @@ SCRIPT = """(() => {
 
 
 def shared_script() -> str:
-    """The script all the apps share (ha-lang.js), which runs before this page's own."""
-    try:
-        return SHARED_SCRIPT_FILE.read_text(encoding="utf-8")
-    except OSError as err:
-        LOGGER.warning("Cannot read the shared script: %s", err)
-        return ""
+    """The scripts all the apps share (ha-lang.js, then ha-frame.js), which run before this page's own."""
+    shared = ""
+    for file in (SHARED_SCRIPT_FILE, FRAME_SCRIPT_FILE):
+        try:
+            shared += file.read_text(encoding="utf-8")
+        except OSError as err:
+            LOGGER.warning("Cannot read the shared script %s: %s", file.name, err)
+    return shared
 
 
 SCRIPT = shared_script() + SCRIPT
@@ -1433,9 +1439,13 @@ def render(state: State, lang: str, slug: str | None, now: float | None = None, 
             body = f'<div class="cards">{sources_card(f, chrony)}{accuracy_card(f, chrony)}</div>'
         else:
             body = f'<div class="cards">{clock_card(f)}{status_card(f, chrony, state.clients, now, state.http)}</div>'
-    # The same header on every page of the apps: when the data were read (the
-    # time of the request before the first read), refresh, and the settings,
-    # which are Home Assistant's own page, outside the ingress frame
+    # The same header on every page of the apps, as Home Assistant's own pages:
+    # the menu button (narrow only), the views (no icon and no visible name with
+    # them), when the data were read (the time of the request before the first
+    # read), refresh, and the settings, which are Home Assistant's own page,
+    # outside the ingress frame
+    menu = (f'<a class="icon-button menu" href="" data-ha-menu role="button" title="{esc(t["menu"])}"'
+            f' aria-label="{esc(t["menu"])}">{icon("menu")}</a>')
     stamp = time.strftime("%H:%M:%S", time.localtime(state.at or now))
     actions = f'<span class="stamp opt">{esc(t["as_of"].format(stamp))}</span>'
     actions += (f'<a class="icon-button" href="" id="refresh" role="button" title="{esc(t["refresh"])}"'
@@ -1446,9 +1456,9 @@ def render(state: State, lang: str, slug: str | None, now: float | None = None, 
     # As on Home Assistant's own pages: name and version at the very bottom
     about = f"{APP_NAME} {version}" if version else APP_NAME
     return (f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
             f"<title>{esc(t['title'])}</title>{stylesheet()}<script>{SCRIPT}</script></head><body>"
-            f'<header>{APP_ICON_TAG}<h1>{esc(t["title"])}</h1>{tabs(t, tab)}<div class="actions" id="actions">{actions}</div></header>'
+            f'<header>{menu}<h1 class="name">{esc(t["title"])}</h1>{tabs(t, tab)}<div class="actions" id="actions">{actions}</div></header>'
             # The dialog stays outside main, which the script swaps for a fresh copy
             f'<main>{body}</main>{edit_dialog(t) if tab == "clients" else ""}<footer class="version">{esc(about)}</footer></body></html>')
 

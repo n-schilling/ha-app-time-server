@@ -64,7 +64,7 @@ The time is the host clock corrected by chrony's estimate of its offset, the sam
 
 ## Web page
 
-**Open web UI** on the app's page opens it; **Show in sidebar** adds **Time Server** to the sidebar (administrators only). The page follows your Home Assistant theme and updates itself every 30 seconds; the refresh button in the header reads chrony at once, the time next to it shows how current the data is, and the gear opens the app's configuration. The app's name and version are at the bottom of the page.
+**Open web UI** on the app's page opens it; **Show in sidebar** adds **Time Server** to the sidebar (administrators only). The page follows your Home Assistant theme and updates itself every 30 seconds; the refresh button in the header reads chrony at once, the time next to it shows how current the data is, and the gear opens the app's configuration. It sits in Home Assistant like its own pages: the views (Overview, Upstream, Clients) are tabs in the middle of the header; on a phone they move to a bar at the bottom, the menu button at the left opens Home Assistant's sidebar, Home Assistant's own bar above the app goes away, and header and bar keep clear of the notch and the home bar. The app's name and version are at the bottom of the page.
 
 The page speaks the language of your Home Assistant interface (your profile's language): German, else English. It keeps that language in a cookie for this page only; after you change the language in your profile, the page follows the next time you open it, reloading once.
 
