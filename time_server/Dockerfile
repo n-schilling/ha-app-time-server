@@ -8,7 +8,7 @@
 # https://chrony-project.org/news.html by hand. Built like Alpine's package
 # without NTS: the same features as before (+CMDMON +REFCLOCK +RTC +PRIVDROP
 # +SCFILTER -NTS -SECHASH +IPV6)
-FROM ghcr.io/hassio-addons/base:21.0.11@sha256:79fd58d9d7f2820e8b2e7d2b11a24e22b96ae7a48569af3372183592a1b22974 AS chrony
+FROM ghcr.io/hassio-addons/base:21.0.12@sha256:b265e4d8a9a99febb8786b7fd0344e92f7f494cfe88ccd24b8b44feaeefac93e AS chrony
 ARG CHRONY_VERSION=4.9
 ARG CHRONY_SHA512=9eeee9738727e86562d75e4aee60916957e0626b767d9fea325918d3973e02b3f252c32fd1c4b4cf8461406acccbc8196d6f7d2e9d2d3ce205bc3245b83924b5
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -35,7 +35,7 @@ RUN \
     && make DESTDIR=/out install \
     && rm -rf /out/usr/share/man
 
-FROM ghcr.io/hassio-addons/base:21.0.11@sha256:79fd58d9d7f2820e8b2e7d2b11a24e22b96ae7a48569af3372183592a1b22974
+FROM ghcr.io/hassio-addons/base:21.0.12@sha256:b265e4d8a9a99febb8786b7fd0344e92f7f494cfe88ccd24b8b44feaeefac93e
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
